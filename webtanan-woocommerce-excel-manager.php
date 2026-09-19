@@ -25,6 +25,8 @@ require_once WEM_DIR . 'includes/class-wem-plugin.php';
 require_once WEM_DIR . 'includes/class-wem-price-tools.php';
 require_once WEM_DIR . 'includes/Pricing/class-wem-price-rule-engine.php';
 require_once WEM_DIR . 'includes/Audit/class-wem-price-log.php';
+require_once WEM_DIR . 'includes/Admin/class-wem-admin-menu.php';
+require_once WEM_DIR . 'includes/Admin/class-wem-price-rules-page.php';
 
 add_action(
 	'plugins_loaded',
@@ -34,6 +36,14 @@ add_action(
 
 		if ( class_exists( 'WEM_Price_Log' ) ) {
 			WEM_Price_Log::init();
+		}
+
+		if ( class_exists( 'WEM_Admin_Menu' ) ) {
+			WEM_Admin_Menu::init();
+		}
+
+		if ( class_exists( 'WEM_Price_Rules_Page' ) ) {
+			WEM_Price_Rules_Page::init();
 		}
 	}
 );
