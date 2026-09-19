@@ -25,7 +25,7 @@ final class WEM_Price_Tools {
 
 	public static function admin_menu() {
 		add_submenu_page(
-			'edit.php?post_type=product',
+			WEM_Admin_Menu::MENU_SLUG,
 			'تغییر درصدی قیمت محصولات',
 			'تغییر درصدی قیمت',
 			self::CAPABILITY,
@@ -34,7 +34,7 @@ final class WEM_Price_Tools {
 		);
 
 		add_submenu_page(
-			'edit.php?post_type=product',
+			WEM_Admin_Menu::MENU_SLUG,
 			'ویرایش جدولی قیمت محصولات',
 			'ویرایش جدولی قیمت',
 			self::CAPABILITY,
@@ -45,7 +45,7 @@ final class WEM_Price_Tools {
 
 	public static function render_bulk_page() {
 		self::assert_access();
-		$token  = isset( $_GET['preview'] ) ? sanitize_key( wp_unslash( $_GET['preview'] ) ) : '';
+		$token  = isset( $_GET['preview'] ) ? sanitize_key( wp_unslash( $_GET['preview'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only preview lookup.
 		$notice = self::pull_notice( 'bulk' );
 		?>
 		<div class="wrap wem-wrap" dir="rtl">
@@ -75,9 +75,9 @@ final class WEM_Price_Tools {
 
 	public static function render_editor_page() {
 		self::assert_access();
-		$category_id     = isset( $_GET['category_id'] ) ? absint( $_GET['category_id'] ) : 0;
-		$include_children = ! isset( $_GET['include_children'] ) || '0' !== (string) $_GET['include_children'];
-		$page             = max( 1, isset( $_GET['paged'] ) ? absint( $_GET['paged'] ) : 1 );
+		$category_id     = isset( $_GET['category_id'] ) ? absint( $_GET['category_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only table filter.
+		$include_children = ! isset( $_GET['include_children'] ) || '0' !== (string) $_GET['include_children']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only table filter.
+		$page             = max( 1, isset( $_GET['paged'] ) ? absint( $_GET['paged'] ) : 1 ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only pagination.
 		$notice           = self::pull_notice( 'editor' );
 		?>
 		<div class="wrap wem-wrap" dir="rtl">
@@ -214,7 +214,7 @@ final class WEM_Price_Tools {
 				self::PREVIEW_TTL
 			);
 
-			wp_safe_redirect( add_query_arg( array( 'post_type' => 'product', 'page' => self::BULK_PAGE_SLUG, 'preview' => $token ), admin_url( 'edit.php' ) ) );
+			wp_safe_redirect( add_query_arg( array( 'page' => self::BULK_PAGE_SLUG, 'preview' => $token ), admin_url( 'admin.php' ) ) );
 			exit;
 		} catch ( Throwable $e ) {
 			self::redirect_notice( 'bulk', 'error', 'خطا در محاسبه پیش‌نمایش: ' . $e->getMessage() );
@@ -243,6 +243,7 @@ final class WEM_Price_Tools {
 		$skipped = 0;
 		$errors  = array();
 		$parents = array();
+		$operation_id = WEM_Price_Log::new_operation_id( 'bulk' );
 		foreach ( $data['changes'] as $item ) {
 			$id = absint( $item['id'] );
 			try {
@@ -262,6 +263,19 @@ final class WEM_Price_Tools {
 				}
 				$product->save();
 				wc_delete_product_transients( $id );
+				$logged = WEM_Price_Log::record_changes(
+					$product,
+					$item['changes'],
+					array(
+						'operation_id'    => $operation_id,
+						'operation_label' => 'تغییر درصدی دسته‌بندی',
+						'change_type'     => 'bulk_percent',
+						'context'         => isset( $data['settings'] ) ? $data['settings'] : array(),
+					)
+				);
+				if ( is_wp_error( $logged ) ) {
+					$errors[] = 'ID ' . $id . ': تغییر ذخیره شد اما ثبت تاریخچه خطا داشت: ' . $logged->get_error_message();
+				}
 				if ( $product->get_parent_id() ) {
 					$parents[ $product->get_parent_id() ] = true;
 				}
@@ -299,6 +313,7 @@ final class WEM_Price_Tools {
 		$skipped = 0;
 		$errors  = array();
 		$parents = array();
+		$operation_id = WEM_Price_Log::new_operation_id( 'inline' );
 
 		foreach ( $rows as $id_raw => $values ) {
 			$id = absint( $id_raw );
@@ -383,6 +398,28 @@ final class WEM_Price_Tools {
 				}
 				$product->save();
 				wc_delete_product_transients( $id );
+				$price_changes = array();
+				if ( $price_changed ) {
+					$price_changes['regular_price'] = array( 'old' => $old_regular, 'new' => $new_regular );
+				}
+				if ( $sale_changed ) {
+					$price_changes['sale_price'] = array( 'old' => $old_sale, 'new' => $new_sale );
+				}
+				if ( $price_changes ) {
+					$logged = WEM_Price_Log::record_changes(
+						$product,
+						$price_changes,
+						array(
+							'operation_id'    => $operation_id,
+							'operation_label' => 'ویرایش جدولی قیمت',
+							'change_type'     => 'inline_edit',
+							'context'         => array( 'category_id' => $category_id ),
+						)
+					);
+					if ( is_wp_error( $logged ) ) {
+						$errors[] = 'ID ' . $id . ': تغییر ذخیره شد اما ثبت تاریخچه خطا داشت: ' . $logged->get_error_message();
+					}
+				}
 				if ( $product->get_parent_id() ) {
 					$parents[ $product->get_parent_id() ] = true;
 				}
@@ -452,7 +489,7 @@ final class WEM_Price_Tools {
 				<p><button class="button button-primary button-hero" type="submit">ذخیره ردیف‌های تغییرکرده</button></p>
 			</form>
 			<?php
-			$base = add_query_arg( array( 'post_type' => 'product', 'page' => self::EDITOR_PAGE_SLUG, 'category_id' => $category_id, 'include_children' => $include_children ? 1 : 0, 'paged' => '%#%' ), admin_url( 'edit.php' ) );
+			$base = add_query_arg( array( 'page' => self::EDITOR_PAGE_SLUG, 'category_id' => $category_id, 'include_children' => $include_children ? 1 : 0, 'paged' => '%#%' ), admin_url( 'admin.php' ) );
 			echo '<div class="tablenav"><div class="tablenav-pages">' . wp_kses_post( paginate_links( array( 'base' => $base, 'format' => '', 'current' => $page, 'total' => $total_pages, 'prev_text' => '«', 'next_text' => '»' ) ) ) . '</div></div>';
 			?>
 		</div>
@@ -550,6 +587,7 @@ final class WEM_Price_Tools {
 		}
 		$terms = get_terms( array( 'taxonomy' => 'product_cat', 'include' => array_values( array_unique( $ids ) ), 'hide_empty' => false ) );
 		if ( is_wp_error( $terms ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 			throw new RuntimeException( $terms->get_error_message() );
 		}
 		return wp_list_pluck( $terms, 'slug' );
@@ -708,13 +746,13 @@ final class WEM_Price_Tools {
 	private static function redirect_notice( $scope, $type, $message ) {
 		set_transient( self::notice_key( $scope ), array( 'type' => $type, 'message' => $message ), 180 );
 		$page = 'bulk' === $scope ? self::BULK_PAGE_SLUG : self::EDITOR_PAGE_SLUG;
-		wp_safe_redirect( add_query_arg( array( 'post_type' => 'product', 'page' => $page ), admin_url( 'edit.php' ) ) );
+		wp_safe_redirect( add_query_arg( array( 'page' => $page ), admin_url( 'admin.php' ) ) );
 		exit;
 	}
 
 	private static function redirect_editor_notice( $type, $message, $category_id, $include_children, $page ) {
 		set_transient( self::notice_key( 'editor' ), array( 'type' => $type, 'message' => $message ), 180 );
-		wp_safe_redirect( add_query_arg( array( 'post_type' => 'product', 'page' => self::EDITOR_PAGE_SLUG, 'category_id' => $category_id, 'include_children' => $include_children ? 1 : 0, 'paged' => $page ), admin_url( 'edit.php' ) ) );
+		wp_safe_redirect( add_query_arg( array( 'page' => self::EDITOR_PAGE_SLUG, 'category_id' => $category_id, 'include_children' => $include_children ? 1 : 0, 'paged' => $page ), admin_url( 'admin.php' ) ) );
 		exit;
 	}
 

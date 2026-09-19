@@ -41,6 +41,7 @@ final class WEM_XLSX {
 	public static function write( $target_path, $rows ) {
 		$missing = self::missing_requirements();
 		if ( ! empty( $missing ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 			throw new RuntimeException( 'Missing PHP extensions: ' . implode( ', ', $missing ) );
 		}
 
@@ -131,6 +132,7 @@ final class WEM_XLSX {
 	public static function read_rows( $path, $callback, $max_rows = 20000 ) {
 		$missing = self::missing_requirements();
 		if ( ! empty( $missing ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 			throw new RuntimeException( 'Missing PHP extensions: ' . implode( ', ', $missing ) );
 		}
 
@@ -176,6 +178,7 @@ final class WEM_XLSX {
 			++$row_count;
 			if ( $row_count > $max_rows ) {
 				$reader->close();
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 				throw new RuntimeException( sprintf( 'حداکثر تعداد ردیف مجاز %d است.', $max_rows ) );
 			}
 
@@ -285,6 +288,7 @@ final class WEM_XLSX {
 
 		foreach ( $required as $name => $present ) {
 			if ( ! $present ) {
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 				throw new RuntimeException( 'فایل اکسل ناقص است: ' . $name );
 			}
 		}

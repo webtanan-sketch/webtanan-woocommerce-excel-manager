@@ -26,7 +26,7 @@ final class WEM_Plugin {
 
 	public static function admin_menu() {
 		add_submenu_page(
-			'edit.php?post_type=product',
+			WEM_Admin_Menu::MENU_SLUG,
 			'مدیریت اکسل محصولات',
 			'اکسل محصولات',
 			self::CAPABILITY,
@@ -59,8 +59,8 @@ final class WEM_Plugin {
 	public static function render_page() {
 		self::assert_access();
 
-		$preview_token = isset( $_GET['preview'] ) ? sanitize_key( wp_unslash( $_GET['preview'] ) ) : '';
-		$result_key    = isset( $_GET['result'] ) ? sanitize_key( wp_unslash( $_GET['result'] ) ) : '';
+		$preview_token = isset( $_GET['preview'] ) ? sanitize_key( wp_unslash( $_GET['preview'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only preview lookup.
+		$result_key    = isset( $_GET['result'] ) ? sanitize_key( wp_unslash( $_GET['result'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only result lookup.
 		$notice        = get_transient( self::notice_key() );
 		if ( $notice ) {
 			delete_transient( self::notice_key() );
@@ -244,7 +244,7 @@ final class WEM_Plugin {
 			);
 
 			wp_schedule_single_event( time() + self::PREVIEW_TTL + 120, 'wem_cleanup_preview_file', array( $path ) );
-			wp_safe_redirect( add_query_arg( array( 'post_type' => 'product', 'page' => self::PAGE_SLUG, 'preview' => $token ), admin_url( 'edit.php' ) ) );
+			wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'preview' => $token ), admin_url( 'admin.php' ) ) );
 			exit;
 		} catch ( Throwable $e ) {
 			self::redirect_notice( 'error', 'خطا در بررسی فایل: ' . $e->getMessage() );
@@ -288,13 +288,23 @@ final class WEM_Plugin {
 			}
 
 			$result = self::apply_changes( $data['changes'] );
+			update_option(
+				'wem_last_import_summary',
+				array(
+					'date'         => current_time( 'mysql' ),
+					'updated'      => $result['updated'],
+					'skipped'      => $result['skipped'],
+					'operation_id' => isset( $result['operation_id'] ) ? $result['operation_id'] : '',
+				),
+				false
+			);
 			set_transient( self::result_key( $token ), $result, self::PREVIEW_TTL );
 
 			delete_transient( self::preview_key( $token ) );
 			@unlink( $meta['path'] );
 			delete_option( $lock_key );
 
-			wp_safe_redirect( add_query_arg( array( 'post_type' => 'product', 'page' => self::PAGE_SLUG, 'result' => $token ), admin_url( 'edit.php' ) ) );
+			wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'result' => $token ), admin_url( 'admin.php' ) ) );
 			exit;
 		} catch ( Throwable $e ) {
 			delete_option( $lock_key );
@@ -613,6 +623,7 @@ final class WEM_Plugin {
 				}
 
 				if ( count( $changes ) >= self::MAX_CHANGES ) {
+					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 					throw new RuntimeException( 'تعداد تغییرات از حد مجاز ' . self::MAX_CHANGES . ' بیشتر است؛ فایل را به چند بخش تقسیم کنید.' );
 				}
 
@@ -656,10 +667,12 @@ final class WEM_Plugin {
 
 
 	private static function apply_changes( $items ) {
+		$operation_id = WEM_Price_Log::new_operation_id( 'excel' );
 		$result = array(
-			'updated' => 0,
-			'skipped' => 0,
-			'errors'  => array(),
+			'updated'      => 0,
+			'skipped'      => 0,
+			'errors'       => array(),
+			'operation_id' => $operation_id,
 		);
 		$parents_to_sync = array();
 
@@ -717,6 +730,19 @@ final class WEM_Plugin {
 
 				$product->save();
 				wc_delete_product_transients( $id );
+				$logged = WEM_Price_Log::record_changes(
+					$product,
+					$item['changes'],
+					array(
+						'operation_id'    => $operation_id,
+						'operation_label' => 'ورود فایل Excel',
+						'change_type'     => 'excel_import',
+						'context'         => array( 'source' => 'xlsx_import' ),
+					)
+				);
+				if ( is_wp_error( $logged ) ) {
+					$result['errors'][] = array( 'id' => $id, 'message' => 'تغییر ذخیره شد اما ثبت تاریخچه خطا داشت: ' . $logged->get_error_message() );
+				}
 				if ( $product->get_parent_id() ) {
 					$parents_to_sync[ $product->get_parent_id() ] = true;
 				}
@@ -934,6 +960,7 @@ final class WEM_Plugin {
 		$missing  = array_diff( $required, array_keys( $map ) );
 		if ( ! empty( $missing ) ) {
 			$labels = array_map( array( __CLASS__, 'field_label' ), $missing );
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 			throw new RuntimeException( 'ستون‌های الزامی پیدا نشد: ' . implode( '، ', $labels ) );
 		}
 		return $map;
@@ -1102,6 +1129,7 @@ final class WEM_Plugin {
 		if ( $include_children ) {
 			$children = get_term_children( $category_id, 'product_cat' );
 			if ( is_wp_error( $children ) ) {
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 				throw new RuntimeException( $children->get_error_message() );
 			}
 			$ids = array_merge( $ids, array_map( 'absint', $children ) );
@@ -1114,6 +1142,7 @@ final class WEM_Plugin {
 			)
 		);
 		if ( is_wp_error( $terms ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception is escaped by the admin handler before rendering.
 			throw new RuntimeException( $terms->get_error_message() );
 		}
 		return array_values( array_filter( wp_list_pluck( $terms, 'slug' ) ) );
@@ -1225,7 +1254,7 @@ final class WEM_Plugin {
 
 	private static function redirect_notice( $type, $message ) {
 		set_transient( self::notice_key(), array( 'type' => $type, 'message' => $message ), 120 );
-		wp_safe_redirect( add_query_arg( array( 'post_type' => 'product', 'page' => self::PAGE_SLUG ), admin_url( 'edit.php' ) ) );
+		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG ), admin_url( 'admin.php' ) ) );
 		exit;
 	}
 
