@@ -23,11 +23,17 @@ define( 'WEM_DIR', plugin_dir_path( __FILE__ ) );
 require_once WEM_DIR . 'includes/class-wem-xlsx.php';
 require_once WEM_DIR . 'includes/class-wem-plugin.php';
 require_once WEM_DIR . 'includes/class-wem-price-tools.php';
+require_once WEM_DIR . 'includes/Pricing/class-wem-price-rule-engine.php';
+require_once WEM_DIR . 'includes/Audit/class-wem-price-log.php';
 
 add_action(
 	'plugins_loaded',
 	function () {
 		WEM_Plugin::init();
 		WEM_Price_Tools::init();
+
+		if ( class_exists( 'WEM_Price_Log' ) ) {
+			WEM_Price_Log::init();
+		}
 	}
 );
