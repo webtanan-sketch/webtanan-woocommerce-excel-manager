@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Webtanan WooCommerce Excel Manager
  * Description: مدیریت جامع اکسل، قیمت، موجودی، وضعیت و تغییرات دسته‌ای محصولات و تنوع‌های ووکامرس.
- * Version:     2.1.0
+ * Version:     2.1.1
  * Author:      Webtanan
  * Text Domain: webtanan-woocommerce-excel-manager
  * Requires at least: 6.4
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WEM_VERSION', '2.1.0' );
+define( 'WEM_VERSION', '2.1.1' );
 define( 'WEM_FILE', __FILE__ );
 define( 'WEM_DIR', plugin_dir_path( __FILE__ ) );
 

@@ -18,9 +18,42 @@ final class WEM_Price_Tools {
 
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'admin_menu' ), 20 );
+		add_action( 'admin_init', array( __CLASS__, 'redirect_legacy_editor_url' ) );
 		add_action( 'admin_post_wem_bulk_price_preview', array( __CLASS__, 'handle_bulk_preview' ) );
 		add_action( 'admin_post_wem_bulk_price_apply', array( __CLASS__, 'handle_bulk_apply' ) );
 		add_action( 'admin_post_wem_inline_price_save', array( __CLASS__, 'handle_inline_save' ) );
+	}
+
+	/**
+	 * Redirect editor URLs generated before the page moved to the plugin menu.
+	 *
+	 * A post_type parameter makes WordPress resolve a different page hook and can
+	 * result in "Cannot load webtanan-inline-price-manager" before rendering.
+	 *
+	 * @return void
+	 */
+	public static function redirect_legacy_editor_url() {
+		$page      = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Canonical URL redirect only.
+		$post_type = isset( $_GET['post_type'] ) ? sanitize_key( wp_unslash( $_GET['post_type'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Canonical URL redirect only.
+
+		if ( self::EDITOR_PAGE_SLUG !== $page || 'product' !== $post_type ) {
+			return;
+		}
+
+		$args = array( 'page' => self::EDITOR_PAGE_SLUG );
+		if ( isset( $_GET['category_id'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only filter value.
+			$args['category_id'] = absint( $_GET['category_id'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+		if ( isset( $_GET['include_children'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only filter value.
+			$include_children         = sanitize_key( wp_unslash( $_GET['include_children'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$args['include_children'] = '0' === $include_children ? 0 : 1;
+		}
+		if ( isset( $_GET['paged'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only pagination value.
+			$args['paged'] = max( 1, absint( $_GET['paged'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php' ) ) );
+		exit;
 	}
 
 	public static function admin_menu() {
@@ -76,7 +109,7 @@ final class WEM_Price_Tools {
 	public static function render_editor_page() {
 		self::assert_access();
 		$category_id     = isset( $_GET['category_id'] ) ? absint( $_GET['category_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only table filter.
-		$include_children = ! isset( $_GET['include_children'] ) || '0' !== (string) $_GET['include_children']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only table filter.
+		$include_children = ! isset( $_GET['include_children'] ) || '0' !== sanitize_key( wp_unslash( $_GET['include_children'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only table filter.
 		$page             = max( 1, isset( $_GET['paged'] ) ? absint( $_GET['paged'] ) : 1 ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only pagination.
 		$notice           = self::pull_notice( 'editor' );
 		?>
@@ -85,8 +118,7 @@ final class WEM_Price_Tools {
 			<?php self::render_styles(); ?>
 			<?php self::render_notice( $notice ); ?>
 			<div class="wem-card">
-				<form method="get">
-					<input type="hidden" name="post_type" value="product">
+				<form action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" method="get">
 					<input type="hidden" name="page" value="<?php echo esc_attr( self::EDITOR_PAGE_SLUG ); ?>">
 					<div class="wem-actions">
 						<label><strong>دسته‌بندی:</strong> <?php self::category_dropdown( 'category_id', $category_id, true ); ?></label>

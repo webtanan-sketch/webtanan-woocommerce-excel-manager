@@ -39,7 +39,7 @@ foreach ( $classes as $class ) {
 	}
 }
 
-if ( '2.1.0' !== WEM_VERSION ) {
+if ( '2.1.1' !== WEM_VERSION ) {
 	fwrite( STDERR, 'Bootstrap failed: unexpected plugin version.' . PHP_EOL );
 	exit( 1 );
 }
