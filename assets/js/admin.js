@@ -26,6 +26,22 @@
 			} );
 		} );
 
+		document.querySelectorAll( '[data-wem-sale-action]' ).forEach( function ( select ) {
+			var form = select.closest( 'form' );
+			function updateSaleFields() {
+				var sale = select.value === 'create_sale_percent';
+				var target = form.querySelector( '[name="price_target"]' );
+				if ( sale ) { target.value = 'sale'; }
+				target.disabled = sale;
+				form.querySelectorAll( '[data-wem-sale-field]' ).forEach( function ( field ) {
+					field.hidden = ! sale;
+					field.querySelectorAll( 'input' ).forEach( function ( input ) { input.disabled = ! sale; } );
+				} );
+			}
+			updateSaleFields();
+			select.addEventListener( 'change', updateSaleFields );
+		} );
+
 		document.querySelectorAll( 'form[data-wem-confirm]' ).forEach( function ( form ) {
 			form.addEventListener( 'submit', function ( event ) {
 				if ( ! window.confirm( form.getAttribute( 'data-wem-confirm' ) ) ) {
