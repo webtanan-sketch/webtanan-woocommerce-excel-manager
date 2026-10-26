@@ -65,55 +65,81 @@ final class WEM_Plugin {
 		if ( $notice ) {
 			delete_transient( self::notice_key() );
 		}
+		$notice_type = is_array( $notice ) && isset( $notice['type'] ) ? sanitize_key( $notice['type'] ) : 'info';
+		if ( ! in_array( $notice_type, array( 'success', 'warning', 'error', 'info' ), true ) ) {
+			$notice_type = 'info';
+		}
 
 		?>
-		<div class="wrap wem-wrap" dir="rtl">
-			<h1>مدیریت اکسل محصولات ووکامرس</h1>
-			<style>
-				.wem-wrap{max-width:1280px}.wem-card{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;margin:18px 0;box-shadow:0 1px 1px rgba(0,0,0,.04)}
-				.wem-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.wem-help{color:#50575e;line-height:1.9}.wem-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-				.wem-table{width:100%;border-collapse:collapse;margin-top:14px}.wem-table th,.wem-table td{border:1px solid #dcdcde;padding:9px;text-align:right;vertical-align:top}.wem-table th{background:#f6f7f7}
-				.wem-ok{color:#008a20;font-weight:700}.wem-error{color:#b32d2e;font-weight:700}.wem-warning{color:#996800;font-weight:700}.wem-change{margin:0 0 6px}.wem-old{color:#646970}.wem-new{color:#135e96;font-weight:600}
-				.wem-summary{display:flex;gap:12px;flex-wrap:wrap}.wem-badge{background:#f0f0f1;border-radius:999px;padding:7px 12px}.wem-file{padding:12px;background:#f6f7f7;border:1px dashed #8c8f94;border-radius:6px;width:100%;box-sizing:border-box}
-				@media(max-width:900px){.wem-grid{grid-template-columns:1fr}}
-			</style>
+		<div class="wrap wem-shell wem-wrap wem-excel-page" dir="rtl">
+			<header class="wem-page-header wem-page-header--compact">
+				<div>
+					<p class="wem-eyebrow">مدیریت کاتالوگ</p>
+					<h1>مدیریت محصولات با Excel</h1>
+					<p>خروجی بگیرید، فایل را ویرایش کنید و پیش از اعمال تغییرات، گزارش کامل را بررسی کنید.</p>
+				</div>
+				<div class="wem-page-meta" aria-label="مشخصات فایل">
+					<span class="wem-status wem-status--info">فایل استاندارد XLSX</span>
+					<small>حداکثر حجم فایل ورودی: ۱۰ مگابایت</small>
+				</div>
+			</header>
 
 			<?php if ( is_array( $notice ) ) : ?>
-				<div class="notice notice-<?php echo esc_attr( isset( $notice['type'] ) ? $notice['type'] : 'info' ); ?> is-dismissible"><p><?php echo esc_html( isset( $notice['message'] ) ? $notice['message'] : '' ); ?></p></div>
+				<div class="wem-alert wem-alert--<?php echo esc_attr( $notice_type ); ?>" role="<?php echo 'error' === $notice_type ? 'alert' : 'status'; ?>" tabindex="-1"><p><?php echo esc_html( isset( $notice['message'] ) ? $notice['message'] : '' ); ?></p></div>
 			<?php endif; ?>
 
 			<?php self::render_result( $result_key ); ?>
 
-			<div class="wem-grid">
-				<div class="wem-card">
-					<h2>۱) دریافت فایل اکسل</h2>
-					<p class="wem-help">فایل واقعی <code>.xlsx</code> شامل ID، SKU، عنوان، وضعیت، قیمت عادی، قیمت حراج، موجودی، دسته‌بندی، نوع محصول، ID والد و مشخصات تنوع است. قیمت حراج دقیقاً کنار قیمت عادی قرار می‌گیرد.</p>
+			<section class="wem-excel-grid" aria-label="خروجی گرفتن و به‌روزرسانی محصولات">
+				<section class="wem-panel wem-excel-panel" aria-labelledby="wem-export-title">
+					<header class="wem-excel-panel__header">
+						<span class="wem-step-number" aria-hidden="true">۱</span>
+						<div><h2 id="wem-export-title">دریافت خروجی محصولات</h2><p>شناسه، SKU، قیمت، موجودی، دسته و مشخصات تنوع در فایل ثبت می‌شوند.</p></div>
+					</header>
 					<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post">
 						<input type="hidden" name="action" value="wem_export_products">
 						<?php wp_nonce_field( 'wem_export_products' ); ?>
-						<p><label><strong>دسته‌بندی:</strong> <?php self::render_category_dropdown( 'category_id', 0, true ); ?></label></p>
-						<p><label><input type="checkbox" name="include_children" value="1" checked> زیر‌دسته‌ها نیز لحاظ شوند</label></p>
-						<p><label><input type="checkbox" name="include_variations" value="1" checked> ردیف تمام تنوع‌های محصولات متغیر نیز خروجی گرفته شود</label></p>
-						<p><button class="button button-primary button-hero" type="submit">دریافت فایل اکسل محصولات</button></p>
+						<div class="wem-field">
+							<label for="category_id">دسته‌بندی محصولات</label>
+							<?php self::render_category_dropdown( 'category_id', 0, true ); ?>
+							<p class="description">برای خروجی کامل، گزینهٔ «همه دسته‌بندی‌ها» را نگه دارید.</p>
+						</div>
+						<div class="wem-excel-options">
+							<label class="wem-check wem-check--prominent"><input id="include_children" type="checkbox" name="include_children" value="1" checked> <span>زیر‌دسته‌ها نیز لحاظ شوند</span></label>
+							<label class="wem-check wem-check--prominent"><input id="include_variations" type="checkbox" name="include_variations" value="1" checked> <span>هر تنوع محصول در ردیف جداگانه بیاید</span></label>
+						</div>
+						<div class="wem-form-actions"><button class="button button-primary wem-primary-action" type="submit">دریافت فایل XLSX</button></div>
 					</form>
-				</div>
+				</section>
 
-				<div class="wem-card">
-					<h2>۲) آزمایش فایل و تهیه گزارش</h2>
+				<section class="wem-panel wem-excel-panel" aria-labelledby="wem-import-title">
+					<header class="wem-excel-panel__header">
+						<span class="wem-step-number" aria-hidden="true">۲</span>
+						<div><h2 id="wem-import-title">بررسی فایل و پیش‌نمایش تغییرات</h2><p>فایل ویرایش‌شده را بفرستید تا خطاها و تغییرات پیش از ثبت بررسی شوند.</p></div>
+					</header>
 					<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" enctype="multipart/form-data">
 						<input type="hidden" name="action" value="wem_preview_import">
 						<?php wp_nonce_field( 'wem_preview_import' ); ?>
-						<p><input class="wem-file" type="file" name="wem_file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></p>
-						<p><label><input type="checkbox" name="ignore_stock" value="1"> ستون موجودی کاملاً بی‌تأثیر باشد؛ حتی اگر فایل قدیمی موجودی متفاوتی دارد</label></p>
-						<p><label><input type="checkbox" name="dry_run" value="1" checked required> ابتدا فقط تست شود و گزارش تغییرات نمایش داده شود.</label></p>
-						<p><button class="button button-primary" type="submit">بررسی و نمایش گزارش</button></p>
+						<div class="wem-field">
+							<label for="wem-file">فایل خروجی ویرایش‌شده</label>
+							<input id="wem-file" class="wem-file" type="file" name="wem_file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-describedby="wem-file-help wem-file-name" required>
+							<p id="wem-file-help" class="description">فقط XLSX تا حجم ۱۰ مگابایت پذیرفته می‌شود. فرمول، ماکرو و پیوند خارجی پردازش نمی‌شوند.</p>
+							<p id="wem-file-name" class="wem-file-name" aria-live="polite">هنوز فایلی انتخاب نشده است.</p>
+						</div>
+						<label class="wem-check wem-check--prominent"><input id="ignore_stock" type="checkbox" name="ignore_stock" value="1"> <span>ستون موجودی را نادیده بگیر</span></label>
+						<input type="hidden" name="dry_run" value="1">
+						<p class="wem-safety-note"><strong>مرحلهٔ پیش‌نمایش اجباری است.</strong> در این مرحله هیچ محصولی تغییر نمی‌کند؛ ابتدا گزارش را بررسی می‌کنید.</p>
+						<div class="wem-form-actions"><button class="button button-primary wem-primary-action" type="submit">بررسی فایل و نمایش پیش‌نمایش</button></div>
 					</form>
-				</div>
-			</div>
+				</section>
+			</section>
 
-			<div class="wem-card">
-				<h2>قواعد ایمن ویرایش</h2>
-				<ul class="wem-help">
+			<section class="wem-guidelines" aria-labelledby="wem-guidelines-title">
+				<header class="wem-guidelines__heading">
+					<h2 id="wem-guidelines-title">قواعد ویرایش امن</h2>
+					<p>پیش از تغییر فایل، این موارد را مرور کنید.</p>
+				</header>
+				<ul>
 					<li>ستون ID مرجع اصلی شناسایی محصول است و نباید تغییر کند.</li>
 					<li>خالی‌کردن قیمت عادی یا قیمت حراج، همان قیمت را پاک می‌کند؛ قیمت حراج باید کمتر از قیمت عادی باشد.</li>
 					<li>ستون وضعیت فقط مقادیر «منتشر شده / publish» و «پیش‌نویس / draft» را می‌پذیرد.</li>
@@ -123,7 +149,7 @@ final class WEM_Plugin {
 					<li>فایل‌های دارای فرمول، ماکرو، شیء جاسازی‌شده یا لینک خارجی پردازش نمی‌شوند.</li>
 					<li>متن فارسی، UTF-8 و BOM در ابتدای متن یا عنوان ستون‌ها پشتیبانی و پاک‌سازی می‌شود.</li>
 				</ul>
-			</div>
+			</section>
 
 			<?php self::render_preview( $preview_token ); ?>
 		</div>
@@ -326,13 +352,13 @@ final class WEM_Plugin {
 
 		$meta = get_transient( self::preview_key( $token ) );
 		if ( ! is_array( $meta ) || empty( $meta['path'] ) || ! is_readable( $meta['path'] ) ) {
-			echo '<div class="wem-card"><p class="wem-error">گزارش آزمایشی منقضی شده است. فایل را دوباره بارگذاری کنید.</p></div>';
+			echo '<div class="wem-alert wem-alert--error" role="alert" tabindex="-1">گزارش پیش‌نمایش منقضی شده است. فایل را دوباره بارگذاری کنید.</div>';
 			return;
 		}
 
 		$data = json_decode( file_get_contents( $meta['path'] ), true );
 		if ( ! is_array( $data ) ) {
-			echo '<div class="wem-card"><p class="wem-error">گزارش آزمایشی قابل خواندن نیست.</p></div>';
+			echo '<div class="wem-alert wem-alert--error" role="alert" tabindex="-1">گزارش پیش‌نمایش قابل خواندن نیست.</div>';
 			return;
 		}
 
@@ -351,12 +377,12 @@ final class WEM_Plugin {
 			</div>
 
 			<?php if ( ! empty( $errors ) ) : ?>
-				<div class="notice notice-error inline"><p><strong>تا زمان رفع همه خطاها، تأیید نهایی غیرفعال است.</strong> فایل را اصلاح و دوباره بارگذاری کنید.</p></div>
+				<div class="wem-alert wem-alert--error" role="alert" tabindex="-1"><strong>تأیید نهایی تا رفع خطاها غیرفعال است.</strong> فایل را اصلاح و دوباره بارگذاری کنید.</div>
 			<?php elseif ( empty( $data['changes'] ) ) : ?>
-				<div class="notice notice-info inline"><p>هیچ تغییری نسبت به اطلاعات فعلی سرور پیدا نشد.</p></div>
+				<div class="wem-alert wem-alert--info" role="status">هیچ تغییری نسبت به اطلاعات فعلی فروشگاه پیدا نشد.</div>
 			<?php else : ?>
-				<div class="notice notice-warning inline"><p>پس از تأیید، فقط محصولات زیر با همان مقادیر آزمایش‌شده به‌روزرسانی می‌شوند. اگر محصولی بعد از تست روی سرور تغییر کرده باشد، برای جلوگیری از بازنویسی ناخواسته رد می‌شود.</p></div>
-				<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" onsubmit="return confirm('آیا از اعمال نهایی تغییرات روی محصولات گزارش‌شده مطمئن هستید؟');">
+				<div class="wem-alert wem-alert--warning" role="status">پس از تأیید، فقط محصولات گزارش‌شده و مقادیر پیش‌نمایش‌شده به‌روزرسانی می‌شوند. محصولاتی که بعد از پیش‌نمایش تغییر کرده‌اند، برای جلوگیری از بازنویسی ناخواسته رد می‌شوند.</div>
+				<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" data-wem-confirm="آیا از اعمال نهایی تغییرات روی محصولات گزارش‌شده مطمئن هستید؟">
 					<input type="hidden" name="action" value="wem_apply_import">
 					<input type="hidden" name="preview_token" value="<?php echo esc_attr( $token ); ?>">
 					<?php wp_nonce_field( 'wem_apply_import' ); ?>
@@ -365,7 +391,7 @@ final class WEM_Plugin {
 			<?php endif; ?>
 
 			<?php if ( ! empty( $reports ) ) : ?>
-				<table class="wem-table">
+				<div class="wem-table-wrap"><table class="wem-table">
 					<thead><tr><th>ردیف</th><th>ID</th><th>SKU</th><th>محصول</th><th>وضعیت و جزئیات</th></tr></thead>
 					<tbody>
 					<?php foreach ( array_slice( $reports, 0, 1000 ) as $report ) : ?>
@@ -378,7 +404,7 @@ final class WEM_Plugin {
 						</tr>
 					<?php endforeach; ?>
 					</tbody>
-				</table>
+				</table></div>
 				<?php if ( count( $reports ) > 1000 ) : ?><p class="wem-help">برای سبک‌ماندن صفحه، فقط ۱۰۰۰ مورد اول نمایش داده شده است؛ همه تغییرات معتبر در مرحله نهایی لحاظ می‌شوند.</p><?php endif; ?>
 			<?php endif; ?>
 		</div>
@@ -403,11 +429,11 @@ final class WEM_Plugin {
 				<span class="wem-badge">خطای اجرا: <strong><?php echo esc_html( (string) count( $result['errors'] ) ); ?></strong></span>
 			</div>
 			<?php if ( ! empty( $result['errors'] ) ) : ?>
-				<table class="wem-table"><thead><tr><th>ID</th><th>پیام</th></tr></thead><tbody>
+				<div class="wem-table-wrap"><table class="wem-table"><thead><tr><th>ID</th><th>پیام</th></tr></thead><tbody>
 				<?php foreach ( $result['errors'] as $error ) : ?>
 					<tr><td><?php echo esc_html( (string) $error['id'] ); ?></td><td><?php echo esc_html( (string) $error['message'] ); ?></td></tr>
 				<?php endforeach; ?>
-				</tbody></table>
+				</tbody></table></div>
 			<?php else : ?>
 				<p class="wem-ok">عملیات نهایی بدون خطا پایان یافت.</p>
 			<?php endif; ?>

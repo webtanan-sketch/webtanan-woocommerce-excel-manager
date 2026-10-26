@@ -16,7 +16,20 @@
 	document.addEventListener( 'DOMContentLoaded', function () {
 		var errorSummary = document.querySelector( '.wem-alert--error[role="alert"]' );
 		if ( errorSummary ) {
+			if ( ! errorSummary.hasAttribute( 'tabindex' ) ) {
+				errorSummary.setAttribute( 'tabindex', '-1' );
+			}
 			errorSummary.focus();
+		}
+
+		var fileInput = document.querySelector( '#wem-file[type="file"]' );
+		var fileName = document.getElementById( 'wem-file-name' );
+		if ( fileInput && fileName ) {
+			fileInput.addEventListener( 'change', function () {
+				fileName.textContent = fileInput.files && fileInput.files.length
+					? fileInput.files[ 0 ].name
+					: 'هنوز فایلی انتخاب نشده است.';
+			} );
 		}
 
 		document.querySelectorAll( '[data-wem-condition-select]' ).forEach( function ( select ) {

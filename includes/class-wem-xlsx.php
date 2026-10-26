@@ -12,6 +12,7 @@ final class WEM_XLSX {
 	const MAX_ARCHIVE_ENTRIES     = 2000;
 	const MAX_UNCOMPRESSED_BYTES = 104857600; // 100 MB.
 	const MAX_SINGLE_ENTRY_BYTES = 31457280;  // 30 MB.
+	const MAX_WORKSHEET_ROWS     = 1048576; // Excel's worksheet row limit, including the header.
 
 	/**
 	 * Check required PHP extensions.
@@ -57,6 +58,7 @@ final class WEM_XLSX {
 		}
 
 		$row_number = 0;
+		$sheet_ready = false;
 
 		try {
 			self::write_raw( $handle, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' );
@@ -67,6 +69,9 @@ final class WEM_XLSX {
 			self::write_raw( $handle, '<sheetData>' );
 
 			foreach ( $rows as $row ) {
+				if ( $row_number >= self::MAX_WORKSHEET_ROWS ) {
+					throw new RuntimeException( 'فایل Excel حداکثر ' . number_format_i18n( self::MAX_WORKSHEET_ROWS ) . ' ردیف دارد؛ خروجی را بر اساس دسته‌بندی جدا کنید.' );
+				}
 				++$row_number;
 				self::write_raw( $handle, '<row r="' . $row_number . '">' );
 
@@ -91,33 +96,54 @@ final class WEM_XLSX {
 			}
 			self::write_raw( $handle, '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>' );
 			self::write_raw( $handle, '</worksheet>' );
+			$sheet_ready = true;
 		} finally {
-			fclose( $handle );
+			if ( is_resource( $handle ) ) {
+				fclose( $handle );
+			}
+			if ( ! $sheet_ready ) {
+				@unlink( $sheet_path );
+			}
 		}
 
 		$zip = new ZipArchive();
 		if ( true !== $zip->open( $target_path, ZipArchive::CREATE | ZipArchive::OVERWRITE ) ) {
 			@unlink( $sheet_path );
-			throw new RuntimeException( 'Unable to create the XLSX archive.' );
+			throw new RuntimeException( 'امکان ساخت فایل اکسل وجود ندارد.' );
 		}
 
-		$created = gmdate( 'Y-m-d\TH:i:s\Z' );
+		$zip_open = true;
+		try {
+			$created = gmdate( 'Y-m-d\TH:i:s\Z' );
+			$parts   = array(
+				'[Content_Types].xml'      => self::content_types_xml(),
+				'_rels/.rels'              => self::root_rels_xml(),
+				'docProps/app.xml'         => self::app_xml(),
+				'docProps/core.xml'        => self::core_xml( $created ),
+				'xl/workbook.xml'          => self::workbook_xml(),
+				'xl/_rels/workbook.xml.rels' => self::workbook_rels_xml(),
+				'xl/styles.xml'            => self::styles_xml(),
+			);
 
-		$zip->addFromString( '[Content_Types].xml', self::content_types_xml() );
-		$zip->addFromString( '_rels/.rels', self::root_rels_xml() );
-		$zip->addFromString( 'docProps/app.xml', self::app_xml() );
-		$zip->addFromString( 'docProps/core.xml', self::core_xml( $created ) );
-		$zip->addFromString( 'xl/workbook.xml', self::workbook_xml() );
-		$zip->addFromString( 'xl/_rels/workbook.xml.rels', self::workbook_rels_xml() );
-		$zip->addFromString( 'xl/styles.xml', self::styles_xml() );
-		$zip->addFile( $sheet_path, 'xl/worksheets/sheet1.xml' );
-
-		if ( ! $zip->close() ) {
+			foreach ( $parts as $name => $content ) {
+				if ( ! $zip->addFromString( $name, $content ) ) {
+					throw new RuntimeException( 'امکان ذخیره بخش‌های فایل اکسل وجود ندارد.' );
+				}
+			}
+			if ( ! $zip->addFile( $sheet_path, 'xl/worksheets/sheet1.xml' ) ) {
+				throw new RuntimeException( 'امکان افزودن برگه به فایل اکسل وجود ندارد.' );
+			}
+			if ( ! $zip->close() ) {
+				$zip_open = false;
+				throw new RuntimeException( 'ساخت فایل اکسل کامل نشد.' );
+			}
+			$zip_open = false;
+		} finally {
+			if ( $zip_open ) {
+				$zip->close();
+			}
 			@unlink( $sheet_path );
-			throw new RuntimeException( 'Unable to finalize the XLSX archive.' );
 		}
-
-		@unlink( $sheet_path );
 	}
 
 	/**

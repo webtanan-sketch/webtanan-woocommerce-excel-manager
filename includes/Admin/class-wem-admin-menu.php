@@ -93,7 +93,7 @@ final class WEM_Admin_Menu {
 		<div class="wrap wem-shell" dir="rtl">
 			<header class="wem-page-header">
 				<div>
-					<p class="wem-eyebrow">Webtanan Commerce Operations</p>
+					<p class="wem-eyebrow">عملیات فروشگاه وب‌تنان</p>
 					<h1>مرکز مدیریت ووکامرس</h1>
 					<p>قیمت، موجودی، Excel و تاریخچهٔ تغییرات را از یک فضای امن و قابل بازگشت مدیریت کنید.</p>
 				</div>
