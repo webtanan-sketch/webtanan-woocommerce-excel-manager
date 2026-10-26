@@ -115,6 +115,7 @@ final class WEM_Admin_Menu {
 				<div class="wem-section-heading"><div><p class="wem-eyebrow">گردش‌کارها</p><h2>از کجا شروع کنم؟</h2></div></div>
 				<div class="wem-action-grid">
 					<?php self::action_card( 'dashicons-media-spreadsheet', 'مدیریت Excel', 'خروجی بگیرید، فایل را آزمایش کنید و فقط پس از تأیید تغییرات را اعمال کنید.', admin_url( 'admin.php?page=' . WEM_Plugin::PAGE_SLUG ), 'ورود به Excel Manager' ); ?>
+					<?php self::action_card( 'dashicons-tag', 'تخفیف گروهی زمان‌دار', 'ایجاد قیمت حراج درصدی برای همه محصولات، دسته‌بندی یا محصولات انتخابی با زمان شروع و پایان.', admin_url( 'admin.php?page=wem-price-rules&new_sale=1' ), 'ایجاد تخفیف' ); ?>
 					<?php self::action_card( 'dashicons-filter', 'قوانین قیمت', 'شرط ویژگی، دسته، محصول یا SKU را به تغییر مبلغی یا درصدی متصل کنید.', admin_url( 'admin.php?page=wem-price-rules' ), 'مدیریت قوانین' ); ?>
 					<?php self::action_card( 'dashicons-editor-table', 'ویرایش جدولی', 'قیمت و موجودی محصولات یک دسته را در جدول امن و دارای کنترل هم‌زمانی ویرایش کنید.', admin_url( 'admin.php?page=' . WEM_Price_Tools::EDITOR_PAGE_SLUG ), 'بازکردن جدول' ); ?>
 					<?php self::action_card( 'dashicons-backup', 'تاریخچه و بازگردانی', 'علت هر تغییر را ببینید و عملیات واجد شرایط را بدون بازنویسی تغییرات جدیدتر بازگردانید.', admin_url( 'admin.php?page=' . WEM_History_Page::PAGE_SLUG ), 'مشاهده تاریخچه' ); ?>

@@ -115,9 +115,9 @@ final class WEM_History_Page {
 							<tr>
 								<td><?php echo esc_html( mysql2date( 'Y/m/d H:i', $row['created_at'] ) ); ?></td>
 								<td><a href="<?php echo esc_url( get_edit_post_link( $object_id ) ); ?>">#<?php echo esc_html( $object_id ); ?> — <?php echo esc_html( get_the_title( $object_id ) ); ?></a></td>
-								<td><?php echo esc_html( 'sale_price' === $row['price_field'] ? 'قیمت حراج' : 'قیمت عادی' ); ?></td>
-								<td><?php echo esc_html( self::format_price( $row['old_price'] ) ); ?></td>
-								<td><strong><?php echo esc_html( self::format_price( $row['new_price'] ) ); ?></strong></td>
+								<td><?php echo esc_html( WEM_Price_Rule_Engine::field_label( $row['price_field'] ) ); ?></td>
+								<td><?php echo esc_html( WEM_Price_Rule_Engine::format_field( $row['price_field'], $row['old_price'] ) ); ?></td>
+								<td><strong><?php echo esc_html( WEM_Price_Rule_Engine::format_field( $row['price_field'], $row['new_price'] ) ); ?></strong></td>
 								<td><?php echo esc_html( $row['operation_label'] ); ?></td>
 							</tr>
 						<?php endforeach; ?>

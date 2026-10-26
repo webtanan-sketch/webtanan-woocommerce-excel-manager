@@ -33,8 +33,8 @@ final class WEM_Price_Rules_Page {
 	public static function register() {
 		add_submenu_page(
 			WEM_Admin_Menu::MENU_SLUG,
-			'قوانین قیمت',
-			'قوانین قیمت',
+			'قوانین قیمت و تخفیف',
+			'قوانین قیمت و تخفیف',
 			'manage_woocommerce',
 			self::PAGE_SLUG,
 			array( __CLASS__, 'render' )
@@ -61,7 +61,7 @@ final class WEM_Price_Rules_Page {
 		?>
 		<div class="wrap wem-shell" dir="rtl">
 			<header class="wem-page-header wem-page-header--compact">
-				<div><p class="wem-eyebrow">Pricing Automation</p><h1>قوانین قیمت</h1><p>شرط را تعریف کنید، نتیجه را روی داده‌های زنده پیش‌نمایش بگیرید و سپس با ثبت کامل تاریخچه اجرا کنید.</p></div>
+				<div><p class="wem-eyebrow">Pricing Automation</p><h1>قوانین قیمت و تخفیف گروهی</h1><p>شرط را تعریف کنید، نتیجه را روی داده‌های زنده پیش‌نمایش بگیرید و سپس با ثبت کامل تاریخچه اجرا کنید.</p></div>
 			</header>
 
 			<?php if ( $notice ) : ?>
@@ -241,6 +241,11 @@ final class WEM_Price_Rules_Page {
 			self::redirect_notice( 'error', 'قانون پس از پیش‌نمایش تغییر کرده است؛ دوباره پیش‌نمایش بگیرید.' );
 		}
 
+		$validation = WEM_Price_Rule_Engine::validate( $rule );
+		if ( $validation ) {
+			self::redirect_notice( 'error', implode( ' ', $validation ) );
+		}
+
 		$lock_key = 'wem_rule_apply_lock_' . md5( get_current_user_id() . '|' . $token );
 		$lock     = (int) get_option( $lock_key, 0 );
 		if ( $lock && ( time() - $lock ) > 15 * MINUTE_IN_SECONDS ) {
@@ -267,13 +272,7 @@ final class WEM_Price_Rules_Page {
 					throw new RuntimeException( 'قیمت محصول پس از پیش‌نمایش تغییر کرده است.' );
 				}
 
-				foreach ( $item['changes'] as $field => $change ) {
-					if ( 'regular_price' === $field ) {
-						$product->set_regular_price( $change['new'] );
-					} elseif ( 'sale_price' === $field ) {
-						$product->set_sale_price( $change['new'] );
-					}
-				}
+				WEM_Price_Rule_Engine::apply_changes( $product, $item['changes'] );
 				$product->save();
 				wc_delete_product_transients( $id );
 
@@ -320,19 +319,21 @@ final class WEM_Price_Rules_Page {
 	 * @return void
 	 */
 	private static function render_form( $rule ) {
+		$new_sale = isset( $_GET['new_sale'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$rule = is_array( $rule ) ? $rule : array(
 			'id'                 => 0,
 			'name'               => '',
-			'condition_type'     => 'attribute',
+			'condition_type'     => $new_sale ? 'all' : 'attribute',
 			'condition_key'      => '',
 			'condition_values'   => array(),
 			'include_children'   => true,
-			'action_type'        => 'increase_fixed',
+			'action_type'        => $new_sale ? 'create_sale_percent' : 'increase_fixed',
 			'amount'             => '',
-			'price_target'       => 'regular',
+			'price_target'       => $new_sale ? 'sale' : 'regular',
 			'round_to'           => 1,
 			'is_active'          => true,
 		);
+		$rule += array( 'sale_from' => '', 'sale_to' => '' );
 		$values     = implode( ', ', $rule['condition_values'] );
 		$attributes = function_exists( 'wc_get_attribute_taxonomies' ) ? wc_get_attribute_taxonomies() : array();
 		?>
@@ -345,16 +346,19 @@ final class WEM_Price_Rules_Page {
 
 				<div class="wem-field wem-field--full"><label for="wem-rule-name">نام قانون <span aria-hidden="true">*</span></label><input id="wem-rule-name" name="rule_name" type="text" class="regular-text" maxlength="191" value="<?php echo esc_attr( $rule['name'] ); ?>" required aria-describedby="wem-rule-name-help"><p id="wem-rule-name-help" class="description">مثال: افزایش قیمت سایز ۶۰×۱۲۰</p></div>
 				<div class="wem-form-grid">
-					<div class="wem-field"><label for="wem-condition-type">نوع شرط</label><select id="wem-condition-type" name="condition_type" data-wem-condition-select><option value="attribute" <?php selected( $rule['condition_type'], 'attribute' ); ?>>ویژگی محصول</option><option value="category" <?php selected( $rule['condition_type'], 'category' ); ?>>دسته‌بندی</option><option value="product" <?php selected( $rule['condition_type'], 'product' ); ?>>شناسه محصول</option><option value="sku" <?php selected( $rule['condition_type'], 'sku' ); ?>>SKU</option></select></div>
+					<div class="wem-field"><label for="wem-condition-type">نوع شرط</label><select id="wem-condition-type" name="condition_type" data-wem-condition-select><option value="all" <?php selected( $rule['condition_type'], 'all' ); ?>>همه محصولات</option><option value="attribute" <?php selected( $rule['condition_type'], 'attribute' ); ?>>ویژگی محصول</option><option value="category" <?php selected( $rule['condition_type'], 'category' ); ?>>دسته‌بندی</option><option value="product" <?php selected( $rule['condition_type'], 'product' ); ?>>شناسه محصول</option><option value="sku" <?php selected( $rule['condition_type'], 'sku' ); ?>>SKU</option></select></div>
 					<div class="wem-field" data-wem-condition="attribute"><label for="wem-attribute">ویژگی ووکامرس</label><select id="wem-attribute" name="condition_key"><option value="">— انتخاب ویژگی —</option><?php foreach ( $attributes as $attribute ) : $taxonomy = wc_attribute_taxonomy_name( $attribute->attribute_name ); ?><option value="<?php echo esc_attr( $taxonomy ); ?>" <?php selected( $rule['condition_key'], $taxonomy ); ?>><?php echo esc_html( $attribute->attribute_label ); ?></option><?php endforeach; ?></select></div>
 					<div class="wem-field" data-wem-condition="attribute"><label for="wem-attribute-values">مقدار ویژگی</label><input id="wem-attribute-values" name="attribute_values" type="text" value="<?php echo esc_attr( 'attribute' === $rule['condition_type'] ? $values : '' ); ?>" placeholder="60x120, 80x80"><p class="description">نام یا slug مقدارها، جداشده با ویرگول</p></div>
 					<div class="wem-field" data-wem-condition="category"><label for="wem-rule-category">دسته‌بندی</label><?php wp_dropdown_categories( array( 'taxonomy' => 'product_cat', 'hide_empty' => false, 'hierarchical' => true, 'show_option_none' => '— انتخاب دسته —', 'option_none_value' => 0, 'name' => 'category_id', 'id' => 'wem-rule-category', 'selected' => 'category' === $rule['condition_type'] && isset( $rule['condition_values'][0] ) ? absint( $rule['condition_values'][0] ) : 0, 'orderby' => 'name', 'value_field' => 'term_id' ) ); ?><label class="wem-check"><input type="checkbox" name="include_children" value="1" <?php checked( ! empty( $rule['include_children'] ) ); ?>> شامل زیردسته‌ها</label></div>
 					<div class="wem-field" data-wem-condition="product"><label for="wem-product-ids">شناسه محصولات</label><textarea id="wem-product-ids" name="product_ids" rows="3" placeholder="123, 456"><?php echo esc_textarea( 'product' === $rule['condition_type'] ? $values : '' ); ?></textarea><p class="description">ID محصول یا تنوع، جداشده با ویرگول</p></div>
 					<div class="wem-field" data-wem-condition="sku"><label for="wem-product-skus">SKU محصولات</label><textarea id="wem-product-skus" name="product_skus" rows="3" placeholder="TILE-60120, TILE-8080"><?php echo esc_textarea( 'sku' === $rule['condition_type'] ? $values : '' ); ?></textarea><p class="description">کدها را با ویرگول یا خط جدید جدا کنید.</p></div>
-					<div class="wem-field"><label for="wem-action-type">نوع تغییر</label><select id="wem-action-type" name="action_type"><option value="increase_fixed" <?php selected( $rule['action_type'], 'increase_fixed' ); ?>>افزایش مبلغ ثابت</option><option value="decrease_fixed" <?php selected( $rule['action_type'], 'decrease_fixed' ); ?>>کاهش مبلغ ثابت</option><option value="increase_percent" <?php selected( $rule['action_type'], 'increase_percent' ); ?>>افزایش درصدی</option><option value="decrease_percent" <?php selected( $rule['action_type'], 'decrease_percent' ); ?>>کاهش درصدی</option></select></div>
+					<div class="wem-field"><label for="wem-action-type">نوع تغییر</label><select id="wem-action-type" name="action_type" data-wem-sale-action><option value="create_sale_percent" <?php selected( $rule['action_type'], 'create_sale_percent' ); ?>>ایجاد حراج درصدی از قیمت عادی</option><option value="increase_fixed" <?php selected( $rule['action_type'], 'increase_fixed' ); ?>>افزایش مبلغ ثابت</option><option value="decrease_fixed" <?php selected( $rule['action_type'], 'decrease_fixed' ); ?>>کاهش مبلغ ثابت</option><option value="increase_percent" <?php selected( $rule['action_type'], 'increase_percent' ); ?>>افزایش درصدی</option><option value="decrease_percent" <?php selected( $rule['action_type'], 'decrease_percent' ); ?>>کاهش درصدی</option></select></div>
 					<div class="wem-field"><label for="wem-action-amount">مقدار تغییر <span aria-hidden="true">*</span></label><input id="wem-action-amount" name="amount" type="text" inputmode="decimal" value="<?php echo esc_attr( $rule['amount'] ); ?>" required></div>
 					<div class="wem-field"><label for="wem-price-target">قیمت هدف</label><select id="wem-price-target" name="price_target"><option value="regular" <?php selected( $rule['price_target'], 'regular' ); ?>>قیمت عادی</option><option value="sale" <?php selected( $rule['price_target'], 'sale' ); ?>>قیمت حراج</option><option value="both" <?php selected( $rule['price_target'], 'both' ); ?>>هر دو قیمت</option></select></div>
 					<div class="wem-field"><label for="wem-round-to">گرد کردن</label><select id="wem-round-to" name="round_to"><?php foreach ( array( 1 => 'بدون گرد کردن خاص', 10 => 'نزدیک‌ترین ۱۰', 100 => 'نزدیک‌ترین ۱۰۰', 1000 => 'نزدیک‌ترین ۱٬۰۰۰', 10000 => 'نزدیک‌ترین ۱۰٬۰۰۰' ) as $round => $label ) : ?><option value="<?php echo esc_attr( $round ); ?>" <?php selected( $rule['round_to'], $round ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select></div>
+					<div class="wem-field" data-wem-sale-field><label for="wem-sale-from">شروع حراج</label><input id="wem-sale-from" name="sale_from" type="datetime-local" value="<?php echo esc_attr( $rule['sale_from'] ); ?>"><p class="description">خالی = شروع فوری؛ تاریخ میلادی، منطقه زمانی <?php echo esc_html( wp_timezone_string() ); ?></p></div>
+					<div class="wem-field" data-wem-sale-field><label for="wem-sale-to">پایان حراج</label><input id="wem-sale-to" name="sale_to" type="datetime-local" value="<?php echo esc_attr( $rule['sale_to'] ); ?>"><p class="description">خالی = بدون پایان خودکار</p></div>
+					<p class="description" data-wem-sale-field>درصد از قیمت عادی محاسبه می‌شود؛ قیمت و زمان‌بندی حراج قبلی جایگزین می‌شوند. تنوع‌ها نیز مشمول‌اند. پایان حراج به زمان‌بندی ووکامرس و WP-Cron وابسته است. ذخیره قانون به‌تنهایی اجرا نمی‌کند؛ پیش‌نمایش و تأیید لازم است.</p>
 				</div>
 				<label class="wem-check wem-check--prominent"><input type="checkbox" name="is_active" value="1" <?php checked( ! empty( $rule['is_active'] ) ); ?>> قانون فعال باشد</label>
 				<div class="wem-form-actions"><button class="button button-primary" type="submit"><?php echo esc_html( $rule['id'] ? 'ذخیره تغییرات' : 'ساخت قانون' ); ?></button><?php if ( $rule['id'] ) : ?><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>">انصراف</a><?php endif; ?></div>
@@ -414,6 +418,7 @@ final class WEM_Price_Rules_Page {
 			echo '<div class="wem-alert wem-alert--error" role="alert">پیش‌نمایش منقضی یا نامعتبر است. دوباره پیش‌نمایش بگیرید.</div>';
 			return;
 		}
+		$preview_rule = WEM_Price_Rule_Repository::get( $data['rule_id'] );
 		$reports = isset( $data['reports'] ) ? $data['reports'] : array();
 		$errors  = isset( $data['errors'] ) ? $data['errors'] : array();
 		?>
@@ -422,7 +427,8 @@ final class WEM_Price_Rules_Page {
 			<?php if ( $errors ) : ?><div class="wem-alert wem-alert--error" role="alert" tabindex="-1"><strong>اجرای نهایی غیرفعال است.</strong> خطاها را برطرف یا قانون را دقیق‌تر کنید.</div><?php elseif ( empty( $reports ) ) : ?><div class="wem-alert wem-alert--info" role="status">هیچ قیمت قابل تغییری برای این قانون پیدا نشد.</div><?php else : ?>
 				<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" class="wem-confirm-bar" data-wem-confirm="قیمت‌های نمایش‌داده‌شده اعمال و در تاریخچه ثبت شوند؟"><input type="hidden" name="action" value="wem_apply_price_rule"><input type="hidden" name="preview_token" value="<?php echo esc_attr( $token ); ?>"><?php wp_nonce_field( 'wem_apply_price_rule_' . $token ); ?><p>فقط همین تغییرات پس از کنترل دوبارهٔ قیمت فعلی اعمال می‌شوند.</p><button class="button button-primary" type="submit">تأیید و اجرای قانون</button></form>
 			<?php endif; ?>
-			<?php if ( $reports ) : ?><div class="wem-table-wrap"><table class="widefat striped wem-data-table"><thead><tr><th>ID</th><th>SKU</th><th>محصول / تنوع</th><th>تغییرات</th></tr></thead><tbody><?php foreach ( array_slice( $reports, 0, 1000 ) as $report ) : ?><tr><td><?php echo esc_html( $report['id'] ); ?></td><td><?php echo esc_html( $report['sku'] ); ?></td><td><?php echo esc_html( $report['name'] ); ?></td><td><?php foreach ( $report['changes'] as $field => $change ) : ?><div><span><?php echo esc_html( 'sale_price' === $field ? 'حراج' : 'عادی' ); ?>:</span> <?php echo esc_html( self::format_price( $change['old'] ) ); ?> ← <strong><?php echo esc_html( self::format_price( $change['new'] ) ); ?></strong></div><?php endforeach; ?></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
+			<?php if ( $preview_rule ) : ?><p><?php echo esc_html( self::condition_label( $preview_rule ) . ' — ' . self::action_label( $preview_rule ) ); ?></p><?php endif; ?>
+			<?php if ( $reports ) : ?><div class="wem-table-wrap"><table class="widefat striped wem-data-table"><thead><tr><th>ID</th><th>SKU</th><th>محصول / تنوع</th><th>تغییرات</th></tr></thead><tbody><?php foreach ( array_slice( $reports, 0, 1000 ) as $report ) : ?><tr><td><?php echo esc_html( $report['id'] ); ?></td><td><?php echo esc_html( $report['sku'] ); ?></td><td><?php echo esc_html( $report['name'] ); ?></td><td><?php foreach ( $report['changes'] as $field => $change ) : ?><div><span><?php echo esc_html( WEM_Price_Rule_Engine::field_label( $field ) ); ?>:</span> <?php echo esc_html( WEM_Price_Rule_Engine::format_field( $field, $change['old'] ) ); ?> ← <strong><?php echo esc_html( WEM_Price_Rule_Engine::format_field( $field, $change['new'] ) ); ?></strong></div><?php endforeach; ?></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
 			<?php if ( $errors ) : ?><div class="wem-table-wrap"><table class="widefat striped wem-data-table"><thead><tr><th>ID</th><th>خطا</th></tr></thead><tbody><?php foreach ( array_slice( $errors, 0, 200 ) as $error ) : ?><tr><td><?php echo esc_html( $error['id'] ); ?></td><td><?php echo esc_html( $error['message'] ); ?></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
 		</section>
 		<?php
@@ -446,7 +452,7 @@ final class WEM_Price_Rules_Page {
 			$category_id = isset( $_POST['category_id'] ) ? absint( $_POST['category_id'] ) : 0;
 			$values      = $category_id ? array( $category_id ) : array();
 		} elseif ( 'product' === $type ) {
-			$values = array_values( array_filter( array_map( 'absint', self::parse_list( isset( $_POST['product_ids'] ) ? wp_unslash( $_POST['product_ids'] ) : '' ) ) ) );
+			$values = array_values( array_filter( array_map( 'absint', array_map( array( __CLASS__, 'parse_decimal' ), self::parse_list( isset( $_POST['product_ids'] ) ? wp_unslash( $_POST['product_ids'] ) : '' ) ) ) ) );
 		} elseif ( 'sku' === $type ) {
 			$values = self::parse_list( isset( $_POST['product_skus'] ) ? wp_unslash( $_POST['product_skus'] ) : '' );
 		}
@@ -460,9 +466,11 @@ final class WEM_Price_Rules_Page {
 			'include_children'   => ! empty( $_POST['include_children'] ),
 			'action_type'        => isset( $_POST['action_type'] ) ? sanitize_key( wp_unslash( $_POST['action_type'] ) ) : '',
 			'amount'             => self::parse_decimal( isset( $_POST['amount'] ) ? wp_unslash( $_POST['amount'] ) : '' ),
-			'price_target'       => isset( $_POST['price_target'] ) ? sanitize_key( wp_unslash( $_POST['price_target'] ) ) : '',
+			'price_target'       => isset( $_POST['action_type'] ) && 'create_sale_percent' === $_POST['action_type'] ? 'sale' : ( isset( $_POST['price_target'] ) ? sanitize_key( wp_unslash( $_POST['price_target'] ) ) : '' ),
 			'round_to'           => isset( $_POST['round_to'] ) ? absint( $_POST['round_to'] ) : 1,
 			'is_active'          => ! empty( $_POST['is_active'] ),
+			'sale_from'          => isset( $_POST['sale_from'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_from'] ) ) : '',
+			'sale_to'            => isset( $_POST['sale_to'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_to'] ) ) : '',
 		);
 	}
 	// phpcs:enable WordPress.Security.NonceVerification.Missing
@@ -546,6 +554,9 @@ final class WEM_Price_Rules_Page {
 	 * @return string
 	 */
 	private static function condition_label( array $rule ) {
+		if ( 'all' === $rule['condition_type'] ) {
+			return 'همه محصولات و تنوع‌ها';
+		}
 		$values = implode( '، ', $rule['condition_values'] );
 		if ( 'attribute' === $rule['condition_type'] ) {
 			return 'ویژگی ' . wc_attribute_label( $rule['condition_key'] ) . ': ' . $values;
@@ -564,6 +575,9 @@ final class WEM_Price_Rules_Page {
 	 * @return string
 	 */
 	private static function action_label( array $rule ) {
+		if ( 'create_sale_percent' === $rule['action_type'] ) {
+			return 'ایجاد حراج ' . number_format_i18n( (float) $rule['amount'], 2 ) . '٪ از قیمت عادی؛ شروع: ' . ( $rule['sale_from'] ?: 'فوری' ) . '؛ پایان: ' . ( $rule['sale_to'] ?: 'بدون پایان' );
+		}
 		$labels = array( 'increase_fixed'=>'افزایش مبلغی','decrease_fixed'=>'کاهش مبلغی','increase_percent'=>'افزایش درصدی','decrease_percent'=>'کاهش درصدی' );
 		$target = array( 'regular'=>'قیمت عادی','sale'=>'قیمت حراج','both'=>'هر دو قیمت' );
 		$suffix = false !== strpos( $rule['action_type'], 'percent' ) ? '٪' : '';

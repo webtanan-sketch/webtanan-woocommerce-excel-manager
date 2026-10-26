@@ -101,6 +101,8 @@ final class WEM_Price_Rule_Repository {
 				array(
 					'values'           => array_values( isset( $rule['condition_values'] ) ? (array) $rule['condition_values'] : array() ),
 					'include_children' => ! empty( $rule['include_children'] ),
+					'sale_from' => $rule['sale_from'] ?? '',
+					'sale_to' => $rule['sale_to'] ?? '',
 				),
 				JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
 			),
@@ -214,6 +216,8 @@ final class WEM_Price_Rule_Repository {
 		$row['is_active']        = ! empty( $row['is_active'] );
 		$row['condition_values'] = isset( $condition['values'] ) ? array_values( (array) $condition['values'] ) : array();
 		$row['include_children'] = ! empty( $condition['include_children'] );
+		$row['sale_from'] = $condition['sale_from'] ?? '';
+		$row['sale_to'] = $condition['sale_to'] ?? '';
 		unset( $row['condition_value'] );
 
 		return $row;

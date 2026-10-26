@@ -18,8 +18,8 @@ final class WEM_Price_Rule_Engine {
 	 */
 	public static function validate( array $rule ) {
 		$errors     = array();
-		$conditions = array( 'attribute', 'category', 'product', 'sku' );
-		$actions    = array( 'increase_fixed', 'decrease_fixed', 'increase_percent', 'decrease_percent' );
+		$conditions = array( 'all', 'attribute', 'category', 'product', 'sku' );
+		$actions    = array( 'increase_fixed', 'decrease_fixed', 'increase_percent', 'decrease_percent', 'create_sale_percent' );
 		$targets    = array( 'regular', 'sale', 'both' );
 		$rounding   = array( 1, 10, 100, 1000, 10000 );
 
@@ -29,7 +29,7 @@ final class WEM_Price_Rule_Engine {
 		if ( empty( $rule['condition_type'] ) || ! in_array( $rule['condition_type'], $conditions, true ) ) {
 			$errors[] = 'نوع شرط معتبر نیست.';
 		}
-		if ( empty( $rule['condition_values'] ) ) {
+		if ( 'all' !== $rule['condition_type'] && empty( $rule['condition_values'] ) ) {
 			$errors[] = 'حداقل یک مقدار برای شرط وارد کنید.';
 		}
 		if ( 'attribute' === $rule['condition_type'] && ( empty( $rule['condition_key'] ) || ! taxonomy_exists( $rule['condition_key'] ) ) ) {
@@ -51,6 +51,18 @@ final class WEM_Price_Rule_Engine {
 			$errors[] = 'روش گرد کردن معتبر نیست.';
 		}
 
+		if ( 'create_sale_percent' === $rule['action_type'] ) {
+			if ( (float) $rule['amount'] > 100 || 'sale' !== $rule['price_target'] ) {
+				$errors[] = 'درصد تخفیف باید بیشتر از صفر و حداکثر ۱۰۰ و قیمت هدف حراج باشد.';
+			}
+			$from = self::parse_sale_date( isset( $rule['sale_from'] ) ? $rule['sale_from'] : '' );
+			$to   = self::parse_sale_date( isset( $rule['sale_to'] ) ? $rule['sale_to'] : '' );
+			if ( false === $from || false === $to ) {
+				$errors[] = 'تاریخ حراج معتبر نیست؛ تاریخ و ساعت میلادی وارد کنید.';
+			} elseif ( $to && ( $to <= time() || ( $from && $to <= $from ) ) ) {
+				$errors[] = 'پایان حراج باید در آینده و بعد از شروع باشد.';
+			}
+		}
 		return $errors;
 	}
 
@@ -80,6 +92,7 @@ final class WEM_Price_Rule_Engine {
 			case 'increase_percent':
 				$value *= 1 + ( $amount / 100 );
 				break;
+			case 'create_sale_percent':
 			case 'decrease_percent':
 				$value *= 1 - ( $amount / 100 );
 				break;
@@ -108,6 +121,9 @@ final class WEM_Price_Rule_Engine {
 	public static function matching_products( array $rule, $limit = self::MAX_MATCHES ) {
 		$limit      = min( self::MAX_MATCHES, max( 1, absint( $limit ) ) );
 		$candidates = self::candidate_products( $rule, $limit + 1 );
+		if ( count( $candidates ) > $limit ) {
+			throw new RuntimeException( 'تعداد محصولات از حد ایمن بیشتر است؛ دسته یا محصولات محدودتری انتخاب کنید.' );
+		}
 		$matches    = array();
 		$seen       = array();
 
@@ -154,6 +170,8 @@ final class WEM_Price_Rule_Engine {
 		$values = array_values( array_filter( array_map( 'strval', isset( $rule['condition_values'] ) ? (array) $rule['condition_values'] : array() ), 'strlen' ) );
 
 		switch ( $type ) {
+			case 'all':
+				return true;
 			case 'attribute':
 				foreach ( $values as $value ) {
 					if ( self::matches_attribute( $product, $rule['condition_key'], $value ) ) {
@@ -236,6 +254,8 @@ final class WEM_Price_Rule_Engine {
 	public static function snapshot( $product ) {
 		$modified = $product->get_date_modified( 'edit' );
 		return array(
+			'date_on_sale_from' => self::field_value( $product, 'date_on_sale_from' ),
+			'date_on_sale_to'   => self::field_value( $product, 'date_on_sale_to' ),
 			'regular_price' => (string) $product->get_regular_price( 'edit' ),
 			'sale_price'    => (string) $product->get_sale_price( 'edit' ),
 			'modified_ts'   => $modified ? (int) $modified->getTimestamp() : 0,
@@ -253,7 +273,9 @@ final class WEM_Price_Rule_Engine {
 		return isset( $current['modified_ts'], $expected['modified_ts'] )
 			&& (int) $current['modified_ts'] === (int) $expected['modified_ts']
 			&& self::decimal_equal( $current['regular_price'], $expected['regular_price'] )
-			&& self::decimal_equal( $current['sale_price'], $expected['sale_price'] );
+			&& self::decimal_equal( $current['sale_price'], $expected['sale_price'] )
+			&& (string) ( $current['date_on_sale_from'] ?? '' ) === (string) ( $expected['date_on_sale_from'] ?? '' )
+			&& (string) ( $current['date_on_sale_to'] ?? '' ) === (string) ( $expected['date_on_sale_to'] ?? '' );
 	}
 
 	/**
@@ -264,6 +286,9 @@ final class WEM_Price_Rule_Engine {
 	 * @return array|WP_Error
 	 */
 	public static function changes_for_product( $product, array $rule ) {
+		if ( 'create_sale_percent' === ( $rule['action_type'] ?? '' ) ) {
+			return self::sale_changes( $product, $rule );
+		}
 		$old_regular = (string) $product->get_regular_price( 'edit' );
 		$old_sale    = (string) $product->get_sale_price( 'edit' );
 		$new_regular = $old_regular;
@@ -291,6 +316,80 @@ final class WEM_Price_Rule_Engine {
 		return $changes;
 	}
 
+	/** Human-readable audit and preview labels. */
+	public static function field_label( $field ) {
+		$labels = array( 'regular_price' => 'قیمت عادی', 'sale_price' => 'قیمت حراج', 'date_on_sale_from' => 'شروع حراج', 'date_on_sale_to' => 'پایان حراج' );
+		return $labels[ $field ] ?? $field;
+	}
+
+	/** Display schedule timestamps in the same timezone used by the form. */
+	public static function format_field( $field, $value ) {
+		if ( '' === (string) $value ) {
+			return '—';
+		}
+		return 0 === strpos( $field, 'date_on_sale_' ) ? wp_date( 'Y/m/d H:i', (int) $value ) : number_format_i18n( (float) $value, wc_get_price_decimals() );
+	}
+
+	/** Parse a local Gregorian form value in the WordPress site timezone. */
+	public static function parse_sale_date( $value ) {
+		if ( '' === (string) $value ) {
+			return '';
+		}
+		$date = DateTimeImmutable::createFromFormat( '!Y-m-d\TH:i', (string) $value, wp_timezone() );
+		return $date && $date->format( 'Y-m-d\TH:i' ) === $value ? $date->getTimestamp() : false;
+	}
+
+	/** Read a supported price or sale schedule field in a stable storage format. */
+	public static function field_value( $product, $field ) {
+		$value = $product->{ 'get_' . $field }( 'edit' );
+		return 0 === strpos( $field, 'date_on_sale_' ) ? ( $value ? (string) $value->getTimestamp() : '' ) : (string) $value;
+	}
+
+	/** Apply supported fields via WooCommerce CRUD (timestamps are UTC instants). */
+	public static function apply_changes( $product, array $changes ) {
+		foreach ( $changes as $field => $change ) {
+			if ( in_array( $field, array( 'regular_price', 'sale_price', 'date_on_sale_from', 'date_on_sale_to' ), true ) ) {
+				$value = 0 === strpos( $field, 'date_on_sale_' ) && '' !== (string) $change['new'] ? (int) $change['new'] : $change['new'];
+				$product->{ 'set_' . $field }( $value );
+			}
+		}
+	}
+
+	/** Build an idempotent sale from regular price, replacing the previous schedule. */
+	private static function sale_changes( $product, array $rule ) {
+		$errors = self::validate( $rule );
+		if ( $errors ) {
+			return new WP_Error( 'wem_invalid_sale', implode( ' ', $errors ) );
+		}
+		$regular = $product->get_regular_price( 'edit' );
+		if ( '' === (string) $regular || (float) $regular <= 0 || $product->is_type( 'grouped' ) ) {
+			return array();
+		}
+		$sale = wc_format_decimal( self::calculate( $regular, $rule ), wc_get_price_decimals() );
+		if ( (float) $sale >= (float) $regular ) {
+			return new WP_Error( 'wem_invalid_sale', 'تخفیف پس از گرد کردن باید قیمت را کاهش دهد.' );
+		}
+		$desired = array(
+			'sale_price' => $sale,
+			'date_on_sale_from' => (string) self::parse_sale_date( $rule['sale_from'] ?? '' ),
+			'date_on_sale_to' => (string) self::parse_sale_date( $rule['sale_to'] ?? '' ),
+		);
+		$changes = array();
+		foreach ( $desired as $field => $value ) {
+			$old = self::field_value( $product, $field );
+			if ( 'sale_price' === $field ? ! self::decimal_equal( $old, $value ) : $old !== $value ) {
+				$changes[ $field ] = array( 'old' => $old, 'new' => $value );
+			}
+		}
+		// Log the full sale state, so schedule-only edits also roll back safely.
+		if ( $changes ) {
+			foreach ( $desired as $field => $value ) {
+				$changes[ $field ] = array( 'old' => self::field_value( $product, $field ), 'new' => $value );
+			}
+		}
+		return $changes;
+	}
+
 	/**
 	 * Query the smallest practical candidate set for a rule.
 	 *
@@ -303,6 +402,9 @@ final class WEM_Price_Rule_Engine {
 		$values = isset( $rule['condition_values'] ) ? (array) $rule['condition_values'] : array();
 		$result = array();
 
+		if ( in_array( $type, array( 'product', 'sku' ), true ) && count( array_unique( $values ) ) > $limit ) {
+			throw new RuntimeException( 'تعداد موارد انتخابی از حد ایمن بیشتر است.' );
+		}
 		if ( 'product' === $type ) {
 			foreach ( array_slice( array_unique( array_map( 'absint', $values ) ), 0, $limit ) as $id ) {
 				$product = $id ? wc_get_product( $id ) : false;
@@ -346,6 +448,9 @@ final class WEM_Price_Rule_Engine {
 			if ( is_wp_error( $terms ) ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Exception text is not rendered here; the admin handler escapes it.
 				throw new RuntimeException( $terms->get_error_message() );
+			}
+			if ( empty( $terms ) ) {
+				return array();
 			}
 			$args['category'] = wp_list_pluck( $terms, 'slug' );
 		}

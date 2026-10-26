@@ -83,7 +83,7 @@
 .wem-field { min-width: 0; }
 .wem-field--full { grid-column: 1 / -1; }
 .wem-field label:not(.wem-check) { display: block; margin-bottom: 7px; color: var(--wem-ink); font-weight: 700; }
-.wem-field input[type="text"], .wem-field input[type="number"], .wem-field select, .wem-field textarea { width: 100%; min-height: 44px; border-color: #aeb8c6; border-radius: 8px; }
+.wem-field input[type="text"], .wem-field input[type="number"], .wem-field input[type="datetime-local"], .wem-field select, .wem-field textarea { width: 100%; min-height: 44px; border-color: #aeb8c6; border-radius: 8px; }
 .wem-field textarea { min-height: 86px; resize: vertical; }
 .wem-field .description { margin: 6px 0 0; color: var(--wem-muted); line-height: 1.65; }
 .wem-check { display: flex; align-items: center; gap: 8px; margin-top: 9px; }

@@ -78,7 +78,7 @@ final class WEM_Price_Log {
 
 		$product_id   = absint( isset( $data['product_id'] ) ? $data['product_id'] : 0 );
 		$variation_id = absint( isset( $data['variation_id'] ) ? $data['variation_id'] : 0 );
-		$price_field  = isset( $data['price_field'] ) && 'sale_price' === $data['price_field'] ? 'sale_price' : 'regular_price';
+		$price_field  = isset( $data['price_field'] ) && in_array( $data['price_field'], array( 'sale_price', 'date_on_sale_from', 'date_on_sale_to' ), true ) ? $data['price_field'] : 'regular_price';
 		if ( ! $product_id ) {
 			return new WP_Error( 'wem_log_product_missing', 'شناسه محصول برای ثبت تاریخچه معتبر نیست.' );
 		}
@@ -123,7 +123,7 @@ final class WEM_Price_Log {
 		$parent_id = $product->get_parent_id();
 
 		foreach ( $changes as $field => $change ) {
-			if ( ! in_array( $field, array( 'regular_price', 'sale_price' ), true ) ) {
+			if ( ! in_array( $field, array( 'regular_price', 'sale_price', 'date_on_sale_from', 'date_on_sale_to' ), true ) ) {
 				continue;
 			}
 			$result = self::add(
@@ -264,21 +264,20 @@ final class WEM_Price_Log {
 
 				$changes = array();
 				foreach ( $product_rows as $row ) {
-					$field   = 'sale_price' === $row['price_field'] ? 'sale_price' : 'regular_price';
-					$current = 'sale_price' === $field ? (string) $product->get_sale_price( 'edit' ) : (string) $product->get_regular_price( 'edit' );
+					$field   = $row['price_field'];
+					$current = WEM_Price_Rule_Engine::field_value( $product, $field );
 					if ( ! self::decimal_equal( $current, $row['new_price'] ) ) {
 						throw new RuntimeException( 'قیمت پس از این عملیات دوباره تغییر کرده است؛ بازگردانی خودکار برای جلوگیری از بازنویسی رد شد.' );
 					}
 					$changes[ $field ] = array( 'old' => $current, 'new' => $row['old_price'], 'log_id' => absint( $row['id'] ) );
 				}
 
-				foreach ( $changes as $field => $change ) {
-					if ( 'sale_price' === $field ) {
-						$product->set_sale_price( $change['new'] );
-					} else {
-						$product->set_regular_price( $change['new'] );
-					}
+				$regular = isset( $changes['regular_price'] ) ? $changes['regular_price']['new'] : $product->get_regular_price( 'edit' );
+				$sale = isset( $changes['sale_price'] ) ? $changes['sale_price']['new'] : $product->get_sale_price( 'edit' );
+				if ( '' !== (string) $sale && '' !== (string) $regular && (float) $sale >= (float) $regular ) {
+					throw new RuntimeException( 'قیمت حراج قبلی با قیمت عادی فعلی سازگار نیست؛ بازگردانی رد شد.' );
 				}
+				WEM_Price_Rule_Engine::apply_changes( $product, $changes );
 				$product->save();
 				wc_delete_product_transients( $object_id );
 
