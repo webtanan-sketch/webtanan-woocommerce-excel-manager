@@ -176,16 +176,43 @@ final class WEM_Plugin {
 
 		try {
 			WEM_XLSX::write( $tmp, self::export_rows( $category_id, $include_children, $include_variations ) );
+			clearstatcache( true, $tmp );
+			$file_size = filesize( $tmp );
+			if ( false === $file_size || $file_size <= 0 || ! is_readable( $tmp ) ) {
+				throw new RuntimeException( 'فایل اکسل ساخته نشده یا قابل خواندن نیست. فضای دیسک و دسترسی پوشه موقت سرور را بررسی کنید.' );
+			}
+
+			// HTML optimizers and other output handlers must not filter the XLSX bytes.
+			if ( function_exists( 'ini_set' ) ) {
+				@ini_set( 'zlib.output_compression', '0' );
+			}
+			while ( ob_get_level() > 0 ) {
+				$buffer = ob_get_status();
+				if ( ! ( $buffer['flags'] & PHP_OUTPUT_HANDLER_REMOVABLE ) || ! ob_end_clean() ) {
+					throw new RuntimeException( 'بافر خروجی سرور قابل پاک‌سازی نیست. تنظیمات فشرده‌سازی و بهینه‌سازی خروجی را بررسی کنید.' );
+				}
+			}
+			if ( headers_sent() ) {
+				throw new RuntimeException( 'پیش از فایل اکسل خروجی دیگری ارسال شده است. خطاهای PHP و افزونه‌های بهینه‌سازی خروجی را بررسی کنید.' );
+			}
 
 			$filename = 'woocommerce-products-' . gmdate( 'Y-m-d-His' ) . '.xlsx';
 			nocache_headers();
+			header_remove( 'Content-Encoding' );
 			header( 'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' );
 			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
-			header( 'Content-Length: ' . (string) filesize( $tmp ) );
+			header( 'Content-Length: ' . (string) $file_size );
 			header( 'X-Content-Type-Options: nosniff' );
-			readfile( $tmp );
+			if ( false === readfile( $tmp ) ) {
+				throw new RuntimeException( 'خواندن فایل اکسل برای دانلود ناموفق بود.' );
+			}
 		} catch ( Throwable $e ) {
 			@unlink( $tmp );
+			if ( ! headers_sent() ) {
+				header_remove( 'Content-Disposition' );
+				header_remove( 'Content-Length' );
+				header_remove( 'Content-Type' );
+			}
 			wp_die( esc_html( 'خطا در ساخت فایل اکسل: ' . $e->getMessage() ) );
 		}
 

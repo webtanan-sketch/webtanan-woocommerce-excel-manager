@@ -4,7 +4,7 @@ Tags: woocommerce, excel, xlsx, products, pricing
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Requires Plugins: woocommerce
@@ -63,6 +63,11 @@ Webtanan WooCommerce Excel Manager ابزارهای مدیریت روزمره ک
 WordPress 6.4 یا جدیدتر، WooCommerce 8.0 یا جدیدتر، PHP 7.4 یا جدیدتر و افزونه‌های PHP ZipArchive و XMLReader لازم هستند.
 
 == Changelog ==
+
+= 2.2.2 =
+* رفع خروجی صفر بایتی یا خراب هنگام تداخل با بافرهای خروجی و فشرده‌سازی PHP.
+* بررسی آماده‌بودن فایل پیش از دانلود و نمایش خطای روشن برای بافر خروجی قفل‌شده.
+* افزودن آزمون دانلود XLSX در حضور بافرهای تداخلی.
 
 = 2.2.1 =
 * یکپارچه‌سازی صفحه Excel با داشبورد و بهبود برچسب‌ها، پیش‌نمایش و چیدمان موبایل.
